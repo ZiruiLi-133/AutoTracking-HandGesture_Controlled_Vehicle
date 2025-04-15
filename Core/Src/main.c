@@ -59,9 +59,11 @@ PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
 const float EPSILON = 0.001;
+const float DEAD_BAND = 0.1;
 const int LB = 0;
 const int RB = 1;
-const float DEAD_BAND = 0.1;
+const int LF = 2;
+const int RF = 3;
 const int FORWARD = 1;
 const int BACKWARD = 2;
 const int BREAK = 3;
@@ -71,27 +73,51 @@ const int TEST_MODE = 1;
 const int PWM_MIN = 600;
 
 static volatile int32_t counter = 0;
+static volatile uint32_t last_interrupt_time = 0;
+
 static volatile int duty_cycle_lb = 0;
 static volatile int duty_cycle_rb = 0;
-static volatile uint32_t last_interrupt_time = 0;
+static volatile int duty_cycle_lf = 0;
+static volatile int duty_cycle_rf = 0;
+
 static volatile uint32_t lb_count_last = 0;
 static volatile uint32_t rb_count_last = 0;
+static volatile uint32_t lf_count_last = 0;
+static volatile uint32_t rf_count_last = 0;
+
 static volatile uint32_t lb_count_current = 0;
 static volatile uint32_t rb_count_current = 0;
+static volatile uint32_t lf_count_current = 0;
+static volatile uint32_t rf_count_current = 0;
+
 static volatile int32_t lb_count_diff = 0;
 static volatile int32_t rb_count_diff = 0;
+static volatile int32_t lf_count_diff = 0;
+static volatile int32_t rf_count_diff = 0;
+
 static volatile float lb_speed_real = 0.0;
 static volatile float rb_speed_real = 0.0;
+static volatile float lf_speed_real = 0.0;
+static volatile float rf_speed_real = 0.0;
+
 static volatile float lb_angle_diff = 0.0;
 static volatile float rb_angle_diff = 0.0;
+static volatile float lf_angle_diff = 0.0;
+static volatile float rf_angle_diff = 0.0;
 
 static volatile float lb_speed_ideal = 0.0;
 static volatile float rb_speed_ideal = 0.0;
+static volatile float lf_speed_ideal = 0.0;
+static volatile float rf_speed_ideal = 0.0;
 
 static volatile float lb_integral = 0.0;
 static volatile float lb_previous_err = 0.0;
 static volatile float rb_integral = 0.0;
 static volatile float rb_previous_err = 0.0;
+static volatile float lf_integral = 0.0;
+static volatile float lf_previous_err = 0.0;
+static volatile float rf_integral = 0.0;
+static volatile float rf_previous_err = 0.0;
 
 static volatile float v_desired = 0.0;
 static volatile float w_desired = 0.0;
@@ -117,7 +143,7 @@ void reset_pid(void);
 void motor_control(int motor, int control, float v_desired);
 void set_direction(int motor, int direction);
 float compute_real_speed(float time_gap, int motor);
-void compute_control(float time_gap, int *lb_control, int *rb_control);
+void compute_control(float time_gap);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -165,18 +191,24 @@ int main(void)
   MX_TIM16_Init();
   /* USER CODE BEGIN 2 */
 	HAL_TIM_Base_Start_IT(&htim16);
+	HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
 	HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
 	HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
+	HAL_TIM_Encoder_Start(&htim8, TIM_CHANNEL_ALL);
 
 	//start PWM
 //	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
 //	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0);
 	set_direction(LB, BREAK);
 	set_direction(RB, BREAK);
+	set_direction(LF, BREAK);
+	set_direction(RF, BREAK);
+	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
+	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0);
 	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 0);
 	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 0);
-//	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-//	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
 	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
 	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
   /* USER CODE END 2 */
@@ -191,6 +223,8 @@ int main(void)
 
 	lb_count_last = __HAL_TIM_GET_COUNTER(&htim3);
 	rb_count_last = __HAL_TIM_GET_COUNTER(&htim4);
+	lf_count_last = __HAL_TIM_GET_COUNTER(&htim1);
+	rf_count_last = __HAL_TIM_GET_COUNTER(&htim8);
 
 	HAL_Delay(3000);
 	while (1) {
@@ -339,7 +373,7 @@ static void MX_TIM1_Init(void)
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
@@ -549,7 +583,7 @@ static void MX_TIM8_Init(void)
   htim8.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim8.Init.RepetitionCounter = 0;
   htim8.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
@@ -770,9 +804,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		}
 
 		last_interrupt_time = HAL_GetTick();
-		int lb_control = 0;
-		int rb_control = 0;
-		compute_control(time_gap, &lb_control, &rb_control);
+		compute_control(time_gap);
 
 //		compute_ideal_speed(v_desired, w_desired, &lb_speed_ideal,
 //				&rb_speed_ideal);
@@ -852,6 +884,16 @@ void motor_control(int motor, int control, float v_desired) {
 		duty_cycle_rb = duty_cycle;
 		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, duty_cycle);
 	}
+	else if (motor == LF) {
+		duty_cycle_lf = duty_cycle;
+		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, duty_cycle);
+
+	}
+	else if (motor == RF) {
+		duty_cycle_rf = duty_cycle;
+		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, duty_cycle);
+
+	}
 }
 
 void set_direction(int motor, int direction) {
@@ -877,6 +919,26 @@ void set_direction(int motor, int direction) {
 			rb_stop();
 		}
 	}
+	else if (motor == LF) {
+		if (direction == FORWARD) {
+			lf_forward();
+		} else if (direction == BACKWARD) {
+			lf_backward();
+		} else if (direction == BREAK) {
+			lf_stop();
+		}
+	}
+	else if (motor == RF) {
+		if (direction == FORWARD) {
+			rf_forward();
+		}
+		else if (direction == BACKWARD) {
+			rf_backward();
+		}
+		else if (direction == BREAK) {
+			rf_stop();
+		}
+	}
 }
 
 void reset_pid(void) {
@@ -884,45 +946,83 @@ void reset_pid(void) {
 	lb_previous_err = 0.0;
 }
 
-void compute_control(float time_gap, int *lb_control, int *rb_control) {
+void compute_control(float time_gap) {
+	int lb_control = 0;
+	int rb_control = 0;
+	int lf_control = 0;
+	int rf_control = 0;
 	const float Kp = 1000, Ki = 7500, Kd = 0.0;
 
 	compute_ideal_speed(v_desired, w_desired, &lb_speed_ideal,
-			&rb_speed_ideal);
-	lb_speed_real = compute_real_speed(time_gap, LB);
+			&rb_speed_ideal, &lf_speed_ideal, &rf_speed_ideal);
 
+	// compute control for left side
+	lb_speed_real = compute_real_speed(time_gap, LB);
 	float lb_error = fabs(lb_speed_ideal) - fabs(lb_speed_real);
 	lb_integral += lb_error * time_gap;
 	float lb_derivative = (lb_error - lb_previous_err) / time_gap;
 	lb_previous_err = lb_error;
-	*lb_control = (int) (Kp * lb_error + Ki * lb_integral
+	lb_control = (int) (Kp * lb_error + Ki * lb_integral
 			+ Kd * lb_derivative);
 
+	lf_speed_real = compute_real_speed(time_gap, LF);
+	float lf_error = fabs(lf_speed_ideal) - fabs(lf_speed_real);
+	lf_integral += lf_error * time_gap;
+	float lf_derivative = (lf_error - lf_previous_err) / time_gap;
+	lf_previous_err = lf_error;
+	lf_control = (int) (Kp * lf_error + Ki * lf_integral
+			+ Kd * lf_derivative);
+
+	//compute control for right speed
 	rb_speed_real = compute_real_speed(time_gap, RB);
 	float rb_error = fabs(rb_speed_ideal) - fabs(rb_speed_real);
 	rb_integral += rb_error * time_gap;
 	float rb_derivative = (rb_error - rb_previous_err) / time_gap;
 	rb_previous_err = rb_error;
-	*rb_control = (int) (Kp * rb_error + Ki * rb_integral
+	rb_control = (int) (Kp * rb_error + Ki * rb_integral
 			+ Kd * rb_derivative);
 
-	motor_control(LB, *lb_control, lb_speed_ideal);
-	motor_control(RB, *rb_control, rb_speed_ideal);
+	rf_speed_real = compute_real_speed(time_gap, RF);
+	float rf_error = fabs(rf_speed_ideal) - fabs(rf_speed_real);
+	rf_integral += rf_error * time_gap;
+	float rf_derivative = (rf_error - rf_previous_err) / time_gap;
+	rf_previous_err = rf_error;
+	rf_control = (int) (Kp * rf_error + Ki * rf_integral
+			+ Kd * rf_derivative);
+
+	motor_control(LB, lb_control, lb_speed_ideal);
+	motor_control(LF, lf_control, lf_speed_ideal);
+	motor_control(RB, rb_control, rb_speed_ideal);
+	motor_control(RF, rf_control, rf_speed_ideal);
 
 	char temp_str[200];
 	sprintf(temp_str,
 			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
 			time_gap, v_desired, w_desired, lb_error, lb_integral,
-			lb_derivative, lb_speed_ideal, lb_speed_real, *lb_control,
+			lb_derivative, lb_speed_ideal, lb_speed_real, lb_control,
 			duty_cycle_lb);
-
+	log_to_uart(temp_str);
+//
 //	sprintf(temp_str,
 //			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
 //			time_gap, v_desired, w_desired, rb_error, rb_integral,
-//			rb_derivative, rb_speed_ideal, rb_speed_real, *rb_control,
+//			rb_derivative, rb_speed_ideal, rb_speed_real, rb_control,
 //			duty_cycle_rb);
+//	log_to_uart(temp_str);
 
-	log_to_uart(temp_str);
+//	sprintf(temp_str,
+//			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
+//			time_gap, v_desired, w_desired, lb_error, lf_integral,
+//			lf_derivative, lf_speed_ideal, lf_speed_real, lf_control,
+//			duty_cycle_lf);
+//	log_to_uart(temp_str);
+
+//	sprintf(temp_str,
+//			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
+//			time_gap, v_desired, w_desired, rf_error, rf_integral,
+//			rf_derivative, rf_speed_ideal, rf_speed_real, rf_control,
+//			duty_cycle_rf);
+//	log_to_uart(temp_str);
 }
 
 void compute_lb_real_speed(float time_gap) {
@@ -944,13 +1044,24 @@ float compute_real_speed(float time_gap, int motor) {
 	float speed_real = 0.0;
 	if (motor == LB) {
 		count_diff = (int16_t) (__HAL_TIM_GET_COUNTER(&htim3) - lb_count_last);
-		speed_real = count_diff / 1320.0 * 2 * M_PI * MOTOR_RADIUS / time_gap;
+		speed_real = -1 * count_diff / 1320.0 * 2 * M_PI * MOTOR_RADIUS / time_gap;
 		lb_count_last = __HAL_TIM_GET_COUNTER(&htim3);
 	}
 	else if (motor == RB) {
 		count_diff = (int16_t) (__HAL_TIM_GET_COUNTER(&htim4) - rb_count_last);
 		speed_real = count_diff / 1320.0 * 2 * M_PI * MOTOR_RADIUS / time_gap;
 		rb_count_last = __HAL_TIM_GET_COUNTER(&htim4);
+	}
+	else if (motor == LF) {
+		count_diff = (int16_t) (__HAL_TIM_GET_COUNTER(&htim1) - lf_count_last);
+		speed_real = -1 * count_diff / 1320.0 * 2 * M_PI * MOTOR_RADIUS / time_gap;
+		lf_count_last = __HAL_TIM_GET_COUNTER(&htim1);
+		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
+	}
+	else if (motor == RF) {
+		count_diff = (int16_t) (__HAL_TIM_GET_COUNTER(&htim8) - rf_count_last);
+		speed_real = count_diff / 1320.0 * 2 * M_PI * MOTOR_RADIUS / time_gap;
+		rf_count_last = __HAL_TIM_GET_COUNTER(&htim8);
 	}
 	return speed_real;
 }

@@ -1,6 +1,12 @@
 ../Core/Src/h_bridge_control.c:11:6:lb_forward	8	static
 ../Core/Src/h_bridge_control.c:16:6:lb_backward	8	static
 ../Core/Src/h_bridge_control.c:21:6:lb_stop	8	static
-../Core/Src/h_bridge_control.c:26:6:rb_forward	8	static
-../Core/Src/h_bridge_control.c:31:6:rb_backward	8	static
-../Core/Src/h_bridge_control.c:36:6:rb_stop	8	static
+../Core/Src/h_bridge_control.c:27:6:rb_forward	8	static
+../Core/Src/h_bridge_control.c:32:6:rb_backward	8	static
+../Core/Src/h_bridge_control.c:37:6:rb_stop	8	static
+../Core/Src/h_bridge_control.c:43:6:lf_forward	8	static
+../Core/Src/h_bridge_control.c:48:6:lf_backward	8	static
+../Core/Src/h_bridge_control.c:53:6:lf_stop	8	static
+../Core/Src/h_bridge_control.c:59:6:rf_forward	8	static
+../Core/Src/h_bridge_control.c:64:6:rf_backward	8	static
+../Core/Src/h_bridge_control.c:69:6:rf_stop	8	static

@@ -8,6 +8,8 @@
 #ifndef INC_DRIVE_MODEL_H_
 #define INC_DRIVE_MODEL_H_
 
-void compute_ideal_speed(volatile float v, volatile float w, volatile float *lb_speed, volatile float *rb_speed);
+void compute_ideal_speed(volatile float v, volatile float w,
+		volatile float *lb_speed, volatile float *rb_speed,
+		volatile float *lf_speed, volatile float *rf_speed);
 
 #endif /* INC_DRIVE_MODEL_H_ */
