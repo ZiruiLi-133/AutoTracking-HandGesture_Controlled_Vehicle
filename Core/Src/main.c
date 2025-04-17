@@ -237,10 +237,12 @@ int main(void)
 		v_desired = 1;
 		reset_pid();
 		HAL_Delay(3000);
-		v_desired = 0.5;
+		v_desired = 0.0;
+		w_desired = 10;
 		reset_pid();
 		HAL_Delay(3000);
 		v_desired = -1;
+		w_desired = 0.0;
 		reset_pid();
 		HAL_Delay(3000);
 		v_desired = -0.5;
@@ -996,13 +998,14 @@ void compute_control(float time_gap) {
 	motor_control(RF, rf_control, rf_speed_ideal);
 
 	char temp_str[200];
-	sprintf(temp_str,
-			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
-			time_gap, v_desired, w_desired, lb_error, lb_integral,
-			lb_derivative, lb_speed_ideal, lb_speed_real, lb_control,
-			duty_cycle_lb);
-	log_to_uart(temp_str);
-//
+
+//	sprintf(temp_str,
+//			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
+//			time_gap, v_desired, w_desired, lb_error, lb_integral,
+//			lb_derivative, lb_speed_ideal, lb_speed_real, lb_control,
+//			duty_cycle_lb);
+//	log_to_uart(temp_str);
+////
 //	sprintf(temp_str,
 //			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
 //			time_gap, v_desired, w_desired, rb_error, rb_integral,
@@ -1017,12 +1020,12 @@ void compute_control(float time_gap) {
 //			duty_cycle_lf);
 //	log_to_uart(temp_str);
 
-//	sprintf(temp_str,
-//			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
-//			time_gap, v_desired, w_desired, rf_error, rf_integral,
-//			rf_derivative, rf_speed_ideal, rf_speed_real, rf_control,
-//			duty_cycle_rf);
-//	log_to_uart(temp_str);
+	sprintf(temp_str,
+			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
+			time_gap, v_desired, w_desired, rf_error, rf_integral,
+			rf_derivative, rf_speed_ideal, rf_speed_real, rf_control,
+			duty_cycle_rf);
+	log_to_uart(temp_str);
 }
 
 void compute_lb_real_speed(float time_gap) {

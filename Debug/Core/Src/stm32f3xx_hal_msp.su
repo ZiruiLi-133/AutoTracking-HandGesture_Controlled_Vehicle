@@ -8,7 +8,7 @@
 ../Core/Src/stm32f3xx_hal_msp.c:346:6:HAL_TIM_Encoder_MspDeInit	16	static
 ../Core/Src/stm32f3xx_hal_msp.c:442:6:HAL_TIM_PWM_MspDeInit	16	static
 ../Core/Src/stm32f3xx_hal_msp.c:464:6:HAL_TIM_Base_MspDeInit	16	static
-../Core/Src/stm32f3xx_hal_msp.c:496:6:HAL_UART_MspInit	48	static
-../Core/Src/stm32f3xx_hal_msp.c:533:6:HAL_UART_MspDeInit	16	static
-../Core/Src/stm32f3xx_hal_msp.c:562:6:HAL_PCD_MspInit	24	static
-../Core/Src/stm32f3xx_hal_msp.c:588:6:HAL_PCD_MspDeInit	16	static
+../Core/Src/stm32f3xx_hal_msp.c:496:6:HAL_UART_MspInit	56	static
+../Core/Src/stm32f3xx_hal_msp.c:559:6:HAL_UART_MspDeInit	16	static
+../Core/Src/stm32f3xx_hal_msp.c:608:6:HAL_PCD_MspInit	24	static
+../Core/Src/stm32f3xx_hal_msp.c:634:6:HAL_PCD_MspDeInit	16	static
