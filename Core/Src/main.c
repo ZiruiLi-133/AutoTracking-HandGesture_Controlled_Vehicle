@@ -59,7 +59,9 @@ PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
 const float EPSILON = 0.001;
-const float DEAD_BAND = 0.1;
+const float DEAD_BAND = 0.05;
+const float V_MAX = 1.0;
+const float W_MAX = 100.0;
 const int LB = 0;
 const int RB = 1;
 const int LF = 2;
@@ -227,6 +229,10 @@ int main(void)
 	rf_count_last = __HAL_TIM_GET_COUNTER(&htim8);
 
 	HAL_Delay(3000);
+	v_desired = 0.0;
+	w_desired = -0.3;
+
+
 	while (1) {
 //		counter = (int16_t)__HAL_TIM_GET_COUNTER(&htim3);
 //		angle = (float) counter / 1320.0 * 360.0;
@@ -234,20 +240,22 @@ int main(void)
 //		log_to_uart(str);
 //		HAL_Delay(100);
 
-		v_desired = 1;
-		reset_pid();
-		HAL_Delay(3000);
-		v_desired = 0.0;
-		w_desired = 10;
-		reset_pid();
-		HAL_Delay(3000);
-		v_desired = -1;
-		w_desired = 0.0;
-		reset_pid();
-		HAL_Delay(3000);
-		v_desired = -0.5;
-		reset_pid();
-		HAL_Delay(3000);
+//		v_desired = 1;
+//		reset_pid();
+//		HAL_Delay(1000);
+
+//		v_desired = 3;
+//		w_desired = 0.2;
+//		reset_pid();
+//		HAL_Delay(1000);
+
+//		v_desired = -1;
+//		w_desired = 0.0;
+//		reset_pid();
+//		HAL_Delay(1000);
+//		v_desired = -0.5;
+//		reset_pid();
+//		HAL_Delay(1000);
 //		v_desired = 0.0;
 //		reset_pid();
 //		HAL_Delay(2000);
@@ -486,7 +494,7 @@ static void MX_TIM3_Init(void)
   htim3.Init.Period = 65535;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
@@ -659,7 +667,7 @@ static void MX_USART3_UART_Init(void)
 
   /* USER CODE END USART3_Init 1 */
   huart3.Instance = USART3;
-  huart3.Init.BaudRate = 38400;
+  huart3.Init.BaudRate = 230400;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
   huart3.Init.Parity = UART_PARITY_NONE;
@@ -799,7 +807,7 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim->Instance == TIM16) {
-//		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
 		float time_gap = (float) (HAL_GetTick() - last_interrupt_time) / 1000.0;
 		if (time_gap < EPSILON) {
 			time_gap = EPSILON;
@@ -955,6 +963,10 @@ void compute_control(float time_gap) {
 	int rf_control = 0;
 	const float Kp = 1000, Ki = 7500, Kd = 0.0;
 
+	if (v_desired > V_MAX) {
+		v_desired = V_MAX;
+	}
+
 	compute_ideal_speed(v_desired, w_desired, &lb_speed_ideal,
 			&rb_speed_ideal, &lf_speed_ideal, &rf_speed_ideal);
 
@@ -999,48 +1011,41 @@ void compute_control(float time_gap) {
 
 	char temp_str[200];
 
-//	sprintf(temp_str,
-//			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
-//			time_gap, v_desired, w_desired, lb_error, lb_integral,
-//			lb_derivative, lb_speed_ideal, lb_speed_real, lb_control,
-//			duty_cycle_lb);
-//	log_to_uart(temp_str);
-////
-//	sprintf(temp_str,
-//			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
-//			time_gap, v_desired, w_desired, rb_error, rb_integral,
-//			rb_derivative, rb_speed_ideal, rb_speed_real, rb_control,
-//			duty_cycle_rb);
-//	log_to_uart(temp_str);
-
-//	sprintf(temp_str,
-//			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
-//			time_gap, v_desired, w_desired, lb_error, lf_integral,
-//			lf_derivative, lf_speed_ideal, lf_speed_real, lf_control,
-//			duty_cycle_lf);
-//	log_to_uart(temp_str);
+	lb_count_current = __HAL_TIM_GET_COUNTER(&htim3);
+	rb_count_current = __HAL_TIM_GET_COUNTER(&htim4);
 
 	sprintf(temp_str,
-			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
+			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04u | LB Duty Cycle: %03d\r\n",
+			time_gap, v_desired, w_desired, lb_error, lb_integral,
+			lb_derivative, lb_speed_ideal, lb_speed_real, lb_count_current,
+			duty_cycle_lb);
+	log_to_uart(temp_str);
+
+	sprintf(temp_str,
+			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | RB Ideal: %+6.2f | RB Real: %+6.2f | RB Control: %04u | RB Duty Cycle: %03d\r\n",
+			time_gap, v_desired, w_desired, rb_error, rb_integral,
+			rb_derivative, rb_speed_ideal, rb_speed_real, rb_count_current,
+			duty_cycle_rb);
+	log_to_uart(temp_str);
+
+	sprintf(temp_str,
+			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LF Ideal: %+6.2f | LF Real: %+6.2f | LF Control: %04d | LF Duty Cycle: %03d\r\n",
+			time_gap, v_desired, w_desired, lb_error, lf_integral,
+			lf_derivative, lf_speed_ideal, lf_speed_real, lf_control,
+			duty_cycle_lf);
+	log_to_uart(temp_str);
+
+	sprintf(temp_str,
+			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | RF Ideal: %+6.2f | RF Real: %+6.2f | RF Control: %04d | RF Duty Cycle: %03d\r\n",
 			time_gap, v_desired, w_desired, rf_error, rf_integral,
 			rf_derivative, rf_speed_ideal, rf_speed_real, rf_control,
 			duty_cycle_rf);
 	log_to_uart(temp_str);
+
+	sprintf(temp_str, "\r\n");
+	log_to_uart(temp_str);
 }
 
-void compute_lb_real_speed(float time_gap) {
-	char temp_str[50];
-	lb_count_current = __HAL_TIM_GET_COUNTER(&htim3);
-	float lb_angle_current = (float) (int16_t) lb_count_current / 1320.0
-			* 360.0;
-	lb_count_diff = (int16_t) (lb_count_current - lb_count_last);
-	lb_speed_real = lb_count_diff / 1320.0 * 2 * M_PI * MOTOR_RADIUS / time_gap;
-	lb_angle_diff = (float) lb_count_diff / 1320.0 * 360.0;
-//	sprintf(temp_str, "current angle: %.2f, angle_diff: %.2f\r\n",
-//			lb_angle_current, lb_angle_diff);
-//	log_to_uart(temp_str);
-	lb_count_last = __HAL_TIM_GET_COUNTER(&htim3);
-}
 
 float compute_real_speed(float time_gap, int motor) {
 	int16_t count_diff = 0;

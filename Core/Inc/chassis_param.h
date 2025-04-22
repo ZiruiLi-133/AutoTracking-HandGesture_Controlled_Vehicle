@@ -8,7 +8,7 @@
 #ifndef INC_CHASSIS_PARAM_H_
 #define INC_CHASSIS_PARAM_H_
 
-#define CHASSIS_WIDTH 0.2
+#define CHASSIS_WIDTH 0.332
 #define MOTOR_RADIUS 0.0254
 
 #endif /* INC_CHASSIS_PARAM_H_ */

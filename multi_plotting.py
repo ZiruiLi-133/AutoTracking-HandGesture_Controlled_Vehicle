@@ -3,214 +3,268 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import re
 import time
+import numpy as np
 
-# Configure the serial port (adjust the port and baud rate as necessary)
-ser = serial.Serial('COM8', 38400, timeout=1)
+# Set COM8 directly as requested
+COM_PORT = 'COM8'
+print(f"Attempting to connect to {COM_PORT}...")
 
-# Data storage dictionaries for each motor
+# Try to open the serial port with exception handling and retries
+max_retries = 3
+for attempt in range(max_retries):
+    try:
+        ser = serial.Serial(COM_PORT, 230400, timeout=1)
+        print(f"Successfully connected to {COM_PORT}")
+        break
+    except serial.SerialException as e:
+        print(f"Attempt {attempt+1}/{max_retries}: Error opening {COM_PORT}: {e}")
+        if attempt < max_retries - 1:
+            print("Retrying in 2 seconds...")
+            time.sleep(2)
+        else:
+            print(f"Could not open {COM_PORT} after {max_retries} attempts.")
+            print("Try closing any applications that might be using the port.")
+            print("You can continue without serial connection for testing (plots will be static).")
+            ser = None
+
+# Data storage structures
+class MotorData:
+    def __init__(self):
+        self.times = np.array([])
+        self.desired_speeds = np.array([])
+        self.real_speeds = np.array([])
+        self.duty_cycles = np.array([])
+        
+    def add_point(self, time, desired, real, duty):
+        self.times = np.append(self.times, time)
+        self.desired_speeds = np.append(self.desired_speeds, desired)
+        self.real_speeds = np.append(self.real_speeds, real)
+        self.duty_cycles = np.append(self.duty_cycles, duty)
+        
+    def trim_data(self, cutoff_time):
+        """Remove data points older than cutoff_time"""
+        if len(self.times) == 0:
+            return
+            
+        mask = self.times >= cutoff_time
+        self.times = self.times[mask]
+        self.desired_speeds = self.desired_speeds[mask]
+        self.real_speeds = self.real_speeds[mask]
+        self.duty_cycles = self.duty_cycles[mask]
+
+# Initialize data structures for each motor
 motors = {
-    'LB': {'times': [], 'desired': [], 'real': [], 'control': [], 'duty': [], 'error': [], 'integral': [], 'derivative': []},
-    'RB': {'times': [], 'desired': [], 'real': [], 'control': [], 'duty': [], 'error': [], 'integral': [], 'derivative': []},
-    'LF': {'times': [], 'desired': [], 'real': [], 'control': [], 'duty': [], 'error': [], 'integral': [], 'derivative': []},
-    'RF': {'times': [], 'desired': [], 'real': [], 'control': [], 'duty': [], 'error': [], 'integral': [], 'derivative': []}
+    'lb': MotorData(),
+    'rb': MotorData(),
+    'lf': MotorData(),
+    'rf': MotorData()
 }
 
-# Colors for each motor
-motor_colors = {
-    'LB': {'desired': 'blue', 'real': 'lightblue', 'control': 'darkblue', 'duty': 'royalblue'},
-    'RB': {'desired': 'red', 'real': 'lightcoral', 'control': 'darkred', 'duty': 'firebrick'},
-    'LF': {'desired': 'green', 'real': 'lightgreen', 'control': 'darkgreen', 'duty': 'forestgreen'},
-    'RF': {'desired': 'orange', 'real': 'moccasin', 'control': 'darkorange', 'duty': 'goldenrod'}
-}
-
-# Use the actual time for x-axis data
+# Global time tracking
 start_time = time.time()
 
-# Create figure and subplots
-fig = plt.figure(figsize=(16, 12))
-plt.subplots_adjust(hspace=0.4)
+# Set up the figure and subplots
+fig, axs = plt.subplots(5, 1, figsize=(14, 12), sharex=True)
+plt.subplots_adjust(hspace=0.3)
 
-# Create 4 subplots for each data type
-ax_speed = plt.subplot(411)  # Speed (desired and real)
-ax_control = plt.subplot(412)  # Control values
-ax_duty = plt.subplot(413)  # Duty cycle values
-ax_error = plt.subplot(414)  # Error values
+# Simplified regex patterns that focus only on the essential data
+lb_pattern = re.compile(r"LB Ideal:\s*([+-]?\d+\.\d+)\s*\|\s*LB Real:\s*([+-]?\d+\.\d+).*?LB Duty Cycle:\s*(\d+)")
+rb_pattern = re.compile(r"RB Ideal:\s*([+-]?\d+\.\d+)\s*\|\s*RB Real:\s*([+-]?\d+\.\d+).*?RB Duty Cycle:\s*(\d+)")
+lf_pattern = re.compile(r"LF Ideal:\s*([+-]?\d+\.\d+)\s*\|\s*LF Real:\s*([+-]?\d+\.\d+).*?LF Duty Cycle:\s*(\d+)")
+rf_pattern = re.compile(r"RF Ideal:\s*([+-]?\d+\.\d+)\s*\|\s*RF Real:\s*([+-]?\d+\.\d+).*?RF Duty Cycle:\s*(\d+)")
 
-# Set up the plots
-speed_lines = {}
-control_lines = {}
-duty_lines = {}
-error_lines = {}
+# Create lines for each subplot
+# LB Speed Plot
+lb_desired_line, = axs[0].plot([], [], 'b-', label='LB Desired')
+lb_real_line, = axs[0].plot([], [], 'r-', label='LB Real')
+axs[0].set_ylabel('LB Speed')
+axs[0].set_title('Left Back Motor')
+axs[0].legend(loc='upper left')
+axs[0].grid(True)
 
-for motor in motors.keys():
-    # Speed plot
-    speed_lines[f"{motor}_desired"], = ax_speed.plot([], [], label=f'{motor} Desired', color=motor_colors[motor]['desired'], linestyle='-')
-    speed_lines[f"{motor}_real"], = ax_speed.plot([], [], label=f'{motor} Real', color=motor_colors[motor]['real'], linestyle='--')
+# RB Speed Plot
+rb_desired_line, = axs[2].plot([], [], 'b-', label='RB Desired')
+rb_real_line, = axs[2].plot([], [], 'r-', label='RB Real')
+axs[2].set_ylabel('RB Speed')
+axs[2].set_title('Right Back Motor')
+axs[2].legend(loc='upper left')
+axs[2].grid(True)
+
+# LF Speed Plot
+lf_desired_line, = axs[1].plot([], [], 'b-', label='LF Desired')
+lf_real_line, = axs[1].plot([], [], 'r-', label='LF Real')
+axs[1].set_ylabel('LF Speed')
+axs[1].set_title('Left Front Motor')
+axs[1].legend(loc='upper left')
+axs[1].grid(True)
+
+# RF Speed Plot
+rf_desired_line, = axs[3].plot([], [], 'b-', label='RF Desired')
+rf_real_line, = axs[3].plot([], [], 'r-', label='RF Real')
+axs[3].set_ylabel('RF Speed')
+axs[3].set_title('Right Front Motor')
+axs[3].legend(loc='upper left')
+axs[3].grid(True)
+
+# Duty Cycle Plot (All Motors)
+lb_duty_line, = axs[4].plot([], [], 'b-', label='LB Duty')
+rb_duty_line, = axs[4].plot([], [], 'r-', label='RB Duty')
+lf_duty_line, = axs[4].plot([], [], 'g-', label='LF Duty')
+rf_duty_line, = axs[4].plot([], [], 'orange', label='RF Duty')
+axs[4].set_ylabel('Duty Cycle')
+axs[4].set_xlabel('Time (s)')
+axs[4].set_title('All Motors Duty Cycle')
+axs[4].legend(loc='upper left')
+axs[4].grid(True)
+
+# Create a text object for message display
+message_text = fig.text(0.05, 0.95, '', fontsize=8)
+
+# Fixed window size for the plot
+window_size = 10  # seconds
+
+# Set initial axis limits
+for ax in axs[:4]:  # Speed plots
+    ax.set_xlim(0, window_size)
+    ax.set_ylim(-2, 2)  # Adjust as needed
     
-    # Control plot
-    control_lines[motor], = ax_control.plot([], [], label=f'{motor} Control', color=motor_colors[motor]['control'])
-    
-    # Duty cycle plot
-    duty_lines[motor], = ax_duty.plot([], [], label=f'{motor} Duty Cycle', color=motor_colors[motor]['duty'])
-    
-    # Error plot
-    error_lines[motor], = ax_error.plot([], [], label=f'{motor} Error', color=motor_colors[motor]['desired'])
-
-# Set plot labels and properties
-ax_speed.set_ylabel('Speed')
-ax_speed.set_title('Motor Speeds (Desired vs Real)')
-ax_speed.legend(loc='upper left')
-ax_speed.grid(True)
-
-ax_control.set_ylabel('Control Value')
-ax_control.set_title('Control Values')
-ax_control.legend(loc='upper left')
-ax_control.grid(True)
-
-ax_duty.set_ylabel('Duty Cycle')
-ax_duty.set_title('Duty Cycle Values')
-ax_duty.legend(loc='upper left')
-ax_duty.grid(True)
-
-ax_error.set_xlabel('Time (s)')
-ax_error.set_ylabel('Error')
-ax_error.set_title('PID Error Values')
-ax_error.legend(loc='upper left')
-ax_error.grid(True)
-
-# Create a text object for raw message display
-message_text = fig.text(0.05, 0.97, '', fontsize=8)
-
-# Regex pattern to match motor data from UART messages
-pattern = re.compile(
-    r"\[Δt: +(\d+\.\d+) s\] v: ([+-]\d+\.\d+) \| w: ([+-]\d+\.\d+) \| err: ([+-]\d+\.\d+) \| int: ([+-]\d+\.\d+) \| der: ([+-]\d+\.\d+) \| (LB|RB|LF|RF) Ideal: ([+-]\d+\.\d+) \| (LB|RB|LF|RF) Real: ([+-]\d+\.\d+) \| (LB|RB|LF|RF) Control: (\d+) \| (LB|RB|LF|RF) Duty Cycle: (\d+)"
-)
-
-window_size = 15  # Display window in seconds
+# Duty cycle plot
+axs[4].set_xlim(0, window_size)
+axs[4].set_ylim(-10, 1010)  # Duty cycle 0-1000
 
 def init():
-    # Set initial x-axis limits for all subplots
-    ax_speed.set_xlim(0, window_size)
-    ax_speed.set_ylim(-2, 2)  # Adjust as needed
+    # Initialize with empty data
+    lb_desired_line.set_data([], [])
+    lb_real_line.set_data([], [])
+    rb_desired_line.set_data([], [])
+    rb_real_line.set_data([], [])
+    lf_desired_line.set_data([], [])
+    lf_real_line.set_data([], [])
+    rf_desired_line.set_data([], [])
+    rf_real_line.set_data([], [])
     
-    ax_control.set_xlim(0, window_size)
-    ax_control.set_ylim(-100, 1100)  # Adjust as needed
+    lb_duty_line.set_data([], [])
+    rb_duty_line.set_data([], [])
+    lf_duty_line.set_data([], [])
+    rf_duty_line.set_data([], [])
     
-    ax_duty.set_xlim(0, window_size)
-    ax_duty.set_ylim(-100, 1100)  # Adjust as needed
+    message_text.set_text('Initializing...')
     
-    ax_error.set_xlim(0, window_size)
-    ax_error.set_ylim(-2, 2)  # Adjust as needed
-    
-    # Initialize all line data
-    for motor in motors.keys():
-        speed_lines[f"{motor}_desired"].set_data([], [])
-        speed_lines[f"{motor}_real"].set_data([], [])
-        control_lines[motor].set_data([], [])
-        duty_lines[motor].set_data([], [])
-        error_lines[motor].set_data([], [])
-    
-    message_text.set_text('')
-    
-    # Combine all lines into a single list for return
-    return_lines = list(speed_lines.values()) + list(control_lines.values()) + list(duty_lines.values()) + list(error_lines.values()) + [message_text]
-    return return_lines
+    return (lb_desired_line, lb_real_line, rb_desired_line, rb_real_line,
+            lf_desired_line, lf_real_line, rf_desired_line, rf_real_line,
+            lb_duty_line, rb_duty_line, lf_duty_line, rf_duty_line)
 
 def update(frame):
     global start_time
+    current_time = time.time() - start_time
     
-    try:
-        # Try to read a line from the serial port
-        line = ser.readline().decode('utf-8').strip()
-        if line:
-            # Update the text object with the most recent raw message
-            message_text.set_text(line)
-            
-            # Parse the message using regex
-            match = pattern.search(line)
-            if match:
-                # Extract the motor identifier (LB, RB, LF, RF)
-                motor_id = match.group(7)  # The motor ID from the "LB/RB/LF/RF Ideal" part
+    # Read data from serial port if available
+    if ser is not None:
+        # Read up to 5 lines (4 motors + empty line)
+        for _ in range(5):
+            try:
+                line = ser.readline().decode('utf-8', errors='replace').strip()
+                print(line)
+                if not line:
+                    continue
+                    
+                # Parse the line for each motor
+                lb_match = lb_pattern.search(line)
+                rb_match = rb_pattern.search(line)
+                lf_match = lf_pattern.search(line)
+                rf_match = rf_pattern.search(line)
                 
-                # Verify it matches the other mentions (should be the same motor throughout)
-                if motor_id != match.group(9) or motor_id != match.group(11) or motor_id != match.group(13):
-                    print(f"Warning: Inconsistent motor IDs in message: {line}")
-                    return list(speed_lines.values()) + list(control_lines.values()) + list(duty_lines.values()) + list(error_lines.values()) + [message_text]
+                # Process the matches
+                if lb_match:
+                    lb_ideal = float(lb_match.group(1))
+                    lb_real = float(lb_match.group(2))
+                    lb_duty = int(lb_match.group(3))
+                    motors['lb'].add_point(current_time, lb_ideal, lb_real, lb_duty)
+                    message_text.set_text(f"LB - Ideal: {lb_ideal:.2f}, Real: {lb_real:.2f}, Duty: {lb_duty}")
                 
-                # Extract all relevant data
-                time_gap = float(match.group(1))
-                v_desired = float(match.group(2))
-                w_desired = float(match.group(3))
-                error = float(match.group(4))
-                integral = float(match.group(5))
-                derivative = float(match.group(6))
-                speed_ideal = float(match.group(8))
-                speed_real = float(match.group(10))
-                control = int(match.group(12))
-                duty_cycle = int(match.group(14))
+                elif rb_match:
+                    rb_ideal = float(rb_match.group(1))
+                    rb_real = float(rb_match.group(2))
+                    rb_duty = int(rb_match.group(3))
+                    motors['rb'].add_point(current_time, rb_ideal, rb_real, rb_duty)
+                    message_text.set_text(f"RB - Ideal: {rb_ideal:.2f}, Real: {rb_real:.2f}, Duty: {rb_duty}")
                 
-                current_time = time.time() - start_time
+                elif lf_match:
+                    lf_ideal = float(lf_match.group(1))
+                    lf_real = float(lf_match.group(2))
+                    lf_duty = int(lf_match.group(3))
+                    motors['lf'].add_point(current_time, lf_ideal, lf_real, lf_duty)
+                    message_text.set_text(f"LF - Ideal: {lf_ideal:.2f}, Real: {lf_real:.2f}, Duty: {lf_duty}")
                 
-                # Store data for this motor
-                motors[motor_id]['times'].append(current_time)
-                motors[motor_id]['desired'].append(speed_ideal)
-                motors[motor_id]['real'].append(speed_real)
-                motors[motor_id]['control'].append(control)
-                motors[motor_id]['duty'].append(duty_cycle)
-                motors[motor_id]['error'].append(error)
-                motors[motor_id]['integral'].append(integral)
-                motors[motor_id]['derivative'].append(derivative)
+                elif rf_match:
+                    rf_ideal = float(rf_match.group(1))
+                    rf_real = float(rf_match.group(2))
+                    rf_duty = int(rf_match.group(3))
+                    motors['rf'].add_point(current_time, rf_ideal, rf_real, rf_duty)
+                    message_text.set_text(f"RF - Ideal: {rf_ideal:.2f}, Real: {rf_real:.2f}, Duty: {rf_duty}")
                 
-                # Trim old data for this motor
-                while motors[motor_id]['times'] and motors[motor_id]['times'][0] < current_time - window_size:
-                    motors[motor_id]['times'].pop(0)
-                    motors[motor_id]['desired'].pop(0)
-                    motors[motor_id]['real'].pop(0)
-                    motors[motor_id]['control'].pop(0)
-                    motors[motor_id]['duty'].pop(0)
-                    motors[motor_id]['error'].pop(0)
-                    motors[motor_id]['integral'].pop(0)
-                    motors[motor_id]['derivative'].pop(0)
-                
-                # Update plot lines for this motor
-                speed_lines[f"{motor_id}_desired"].set_data(motors[motor_id]['times'], motors[motor_id]['desired'])
-                speed_lines[f"{motor_id}_real"].set_data(motors[motor_id]['times'], motors[motor_id]['real'])
-                control_lines[motor_id].set_data(motors[motor_id]['times'], motors[motor_id]['control'])
-                duty_lines[motor_id].set_data(motors[motor_id]['times'], motors[motor_id]['duty'])
-                error_lines[motor_id].set_data(motors[motor_id]['times'], motors[motor_id]['error'])
-                
-                # Update x-axis limits for all plots
-                new_xlim = (max(0, current_time - window_size), current_time)
-                ax_speed.set_xlim(*new_xlim)
-                ax_control.set_xlim(*new_xlim)
-                ax_duty.set_xlim(*new_xlim)
-                ax_error.set_xlim(*new_xlim)
-                
-                # Auto-adjust y-axis limits if needed
-                # Here we could add code to dynamically adjust y-limits based on data range
-                
-    except Exception as e:
-        print(f"Error reading/parsing line: {e}")
+            except Exception as e:
+                print(f"Error processing line: {e}")
     
-    # Return all plot lines
-    return_lines = list(speed_lines.values()) + list(control_lines.values()) + list(duty_lines.values()) + list(error_lines.values()) + [message_text]
-    return return_lines
+    # For testing without serial data, add dummy data points
+    if ser is None:
+        # Add dummy data for testing the plot
+        import math
+        for motor in motors.values():
+            motor.add_point(
+                current_time,
+                math.sin(current_time),
+                math.sin(current_time + 0.5),
+                500 + 400 * math.sin(current_time * 0.5)
+            )
+    
+    # Trim old data points
+    cutoff_time = current_time - window_size
+    for motor in motors.values():
+        motor.trim_data(cutoff_time)
+    
+    # Update the plot boundaries
+    for ax in axs:
+        ax.set_xlim(max(0, current_time - window_size), current_time + 0.1)
+    
+    # Update the line data - safely handling empty arrays
+    if len(motors['lb'].times) > 0:
+        lb_desired_line.set_data(motors['lb'].times, motors['lb'].desired_speeds)
+        lb_real_line.set_data(motors['lb'].times, motors['lb'].real_speeds)
+        lb_duty_line.set_data(motors['lb'].times, motors['lb'].duty_cycles)
+    
+    if len(motors['rb'].times) > 0:
+        rb_desired_line.set_data(motors['rb'].times, motors['rb'].desired_speeds)
+        rb_real_line.set_data(motors['rb'].times, motors['rb'].real_speeds)
+        rb_duty_line.set_data(motors['rb'].times, motors['rb'].duty_cycles)
+    
+    if len(motors['lf'].times) > 0:
+        lf_desired_line.set_data(motors['lf'].times, motors['lf'].desired_speeds)
+        lf_real_line.set_data(motors['lf'].times, motors['lf'].real_speeds)
+        lf_duty_line.set_data(motors['lf'].times, motors['lf'].duty_cycles)
+    
+    if len(motors['rf'].times) > 0:
+        rf_desired_line.set_data(motors['rf'].times, motors['rf'].desired_speeds)
+        rf_real_line.set_data(motors['rf'].times, motors['rf'].real_speeds)
+        rf_duty_line.set_data(motors['rf'].times, motors['rf'].duty_cycles)
+    
+    return (lb_desired_line, lb_real_line, rb_desired_line, rb_real_line,
+            lf_desired_line, lf_real_line, rf_desired_line, rf_real_line,
+            lb_duty_line, rb_duty_line, lf_duty_line, rf_duty_line)
 
-# Create the animation
-ani = animation.FuncAnimation(fig, update, init_func=init, interval=20, blit=False, save_count=1000)
+# Create animation
+ani = animation.FuncAnimation(
+    fig, update, init_func=init, 
+    interval=100, blit=True, cache_frame_data=False
+)
 
 # Connect a callback to detect when the figure window is closed
 def on_close(event):
-    print("Animation window closed")
-    # Uncomment the following lines to save the animation when closing
-    # print("Saving video...")
-    # ani.save('motor_animation.mp4', writer='ffmpeg', fps=10)
-    # print("Animation saved as motor_animation.mp4")
-    ser.close()  # Close the serial connection
+    if ser is not None:
+        ser.close()
+        print("Serial port closed")
 
 fig.canvas.mpl_connect('close_event', on_close)
 
-# Set a more descriptive window title
-plt.get_current_fig_manager().set_window_title('Four Motor PID Controller Visualization')
-
+plt.tight_layout()
 plt.show()
