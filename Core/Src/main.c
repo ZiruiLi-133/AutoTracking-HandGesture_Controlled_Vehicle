@@ -26,6 +26,19 @@
 #include "chassis_param.h"
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>    // for sscanf, sprintf
+#include <string.h>   // for strlen
+
+extern UART_HandleTypeDef huart4;
+#define RX_BUF_SIZE 64
+char rxBuffer[RX_BUF_SIZE];
+uint8_t rxChar;
+uint8_t rxIndex = 0;
+uint8_t msgReceived = 0;
+
+
+
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -53,15 +66,41 @@ TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim8;
 TIM_HandleTypeDef htim16;
 
+UART_HandleTypeDef huart4;
+UART_HandleTypeDef huart1; //
+UART_HandleTypeDef huart2; //
 UART_HandleTypeDef huart3;
 
 PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
+// szj
+uint8_t rx_byte;
+char message_hello[] = "Hello world";
+
+
+char rx_buffer[8];
+uint8_t transfer_cplt;
+volatile uint8_t lcd_clear_flag = 0;
+
+
+char szj_buf[9];
+char msg[20];  // Buffer for formatted message
+
+
+// At board cart:
+static float v_new = 0;
+static float omega = 0;
+char v_buffer[100], omega_buffer[100];
+uint8_t dir1, v1;
+
+// lzr
 const float EPSILON = 0.001;
-const float DEAD_BAND = 0.05;
-const float V_MAX = 1.0;
-const float W_MAX = 100.0;
+const float V_DEAD_BAND = 0.05;
+const float W_DEAD_BAND = 0.1;
+const float V_MAX = 0.5;
+const float W_MAX = 3.0;
+const float W_AMP = 0.5;
 const int LB = 0;
 const int RB = 1;
 const int LF = 2;
@@ -137,6 +176,9 @@ static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_TIM8_Init(void);
 static void MX_TIM16_Init(void);
+static void MX_UART4_Init(void);
+static void MX_USART1_UART_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 void log_to_uart(const char *msg);
 void compute_lb_real_speed(float time_gap);
@@ -150,6 +192,12 @@ void compute_control(float time_gap);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+
+int parseVelocityData(const char* buffer, float* linear_vel, float* angular_vel)
+{
+    return sscanf(buffer, "%f,%f", linear_vel, angular_vel) == 2;
+}
 
 /* USER CODE END 0 */
 
@@ -191,12 +239,18 @@ int main(void)
   MX_TIM4_Init();
   MX_TIM8_Init();
   MX_TIM16_Init();
+  MX_UART4_Init();
+  MX_USART1_UART_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 	HAL_TIM_Base_Start_IT(&htim16);
 	HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
 	HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
 	HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
 	HAL_TIM_Encoder_Start(&htim8, TIM_CHANNEL_ALL);
+	HAL_UART_Receive_IT(&huart4, &rxChar, 1);
+	HAL_UART_Receive_IT(&huart1, &rx_byte, 1); // szj
+	char buffer_cmd[8];  // szj
 
 	//start PWM
 //	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
@@ -228,34 +282,42 @@ int main(void)
 	lf_count_last = __HAL_TIM_GET_COUNTER(&htim1);
 	rf_count_last = __HAL_TIM_GET_COUNTER(&htim8);
 
-	HAL_Delay(3000);
-	v_desired = 0.0;
-	w_desired = -3;
+//	HAL_Delay(1000);
+//	v_desired = 0;
+//	w_desired = 3.0;
+//	reset_pid();
 
 
 	while (1) {
+				/*v_desired = 1;
+				reset_pid();
+				HAL_Delay(1000);
+
+				v_desired = 3;
+				w_desired = 0.2;
+				reset_pid();
+				HAL_Delay(1000);
+
+				v_desired = -1;
+				w_desired = 0.0;
+				reset_pid();
+				HAL_Delay(1000);
+				v_desired = -0.5;
+				reset_pid();
+				HAL_Delay(1000);*/
+//				w_desired = 1.0;
+//				reset_pid();
+//				HAL_Delay(2000);
+
+
+
 //		counter = (int16_t)__HAL_TIM_GET_COUNTER(&htim3);
 //		angle = (float) counter / 1320.0 * 360.0;
 //		sprintf(str, "count: %ld, angle: %.2f\r\n", counter, angle);
 //		log_to_uart(str);
 //		HAL_Delay(100);
 
-//		v_desired = 1;
-//		reset_pid();
-//		HAL_Delay(1000);
 
-//		v_desired = 3;
-//		w_desired = 0.2;
-//		reset_pid();
-//		HAL_Delay(1000);
-
-//		v_desired = -1;
-//		w_desired = 0.0;
-//		reset_pid();
-//		HAL_Delay(1000);
-//		v_desired = -0.5;
-//		reset_pid();
-//		HAL_Delay(1000);
 //		v_desired = 0.0;
 //		reset_pid();
 //		HAL_Delay(2000);
@@ -305,11 +367,16 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_USART3
-                              |RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_TIM1
-                              |RCC_PERIPHCLK_TIM16|RCC_PERIPHCLK_TIM8
-                              |RCC_PERIPHCLK_TIM2|RCC_PERIPHCLK_TIM34;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_USART1
+                              |RCC_PERIPHCLK_USART2|RCC_PERIPHCLK_USART3
+                              |RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_RTC
+                              |RCC_PERIPHCLK_TIM1|RCC_PERIPHCLK_TIM16
+                              |RCC_PERIPHCLK_TIM8|RCC_PERIPHCLK_TIM2
+                              |RCC_PERIPHCLK_TIM34;
+  PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
+  PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
   PeriphClkInit.Usart3ClockSelection = RCC_USART3CLKSOURCE_PCLK1;
+  PeriphClkInit.Uart4ClockSelection = RCC_UART4CLKSOURCE_PCLK1;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
   PeriphClkInit.USBClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
   PeriphClkInit.Tim1ClockSelection = RCC_TIM1CLK_HCLK;
@@ -652,6 +719,111 @@ static void MX_TIM16_Init(void)
 }
 
 /**
+  * @brief UART4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_UART4_Init(void)
+{
+
+  /* USER CODE BEGIN UART4_Init 0 */
+
+  /* USER CODE END UART4_Init 0 */
+
+  /* USER CODE BEGIN UART4_Init 1 */
+
+  /* USER CODE END UART4_Init 1 */
+  huart4.Instance = UART4;
+  huart4.Init.BaudRate = 115200;
+  huart4.Init.WordLength = UART_WORDLENGTH_8B;
+  huart4.Init.StopBits = UART_STOPBITS_1;
+  huart4.Init.Parity = UART_PARITY_NONE;
+  huart4.Init.Mode = UART_MODE_TX_RX;
+  huart4.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart4.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart4.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart4.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN UART4_Init 2 */
+
+  /* USER CODE END UART4_Init 2 */
+
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
   * @brief USART3 Initialization Function
   * @param None
   * @retval None
@@ -805,9 +977,94 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+//wo de
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	//szj:
+    if (huart->Instance == USART1)
+    {
+    	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+        // Unpack command
+        dir1 = (rx_byte >> 4) & 0x0F;
+        v1   = rx_byte & 0x0F;
+
+        if(dir1 == 1){
+            omega = (float)v1 /5;
+            v_new = (float)v1 /5;
+        }
+        else if(dir1 == 2){
+            omega = -(float)v1 /5;
+            v_new = (float)v1 /5;
+        }
+        else if(dir1 == 3){
+            omega = 0;
+            v_new = 0;
+        }
+        else if(dir1 == 0){
+            omega = 0;
+            v_new = (float)v1 /5;
+        }
+        else{
+            omega = 0;
+            v_new = 0;
+        }
+
+        // Print values to UART2
+        sprintf(v_buffer, "v=%.2f ", v_new);
+        sprintf(omega_buffer, "w=%.2f\r\n", omega);
+        HAL_UART_Transmit(&huart2, (uint8_t*)v_buffer, strlen(v_buffer), HAL_MAX_DELAY);
+        HAL_UART_Transmit(&huart2, (uint8_t*)omega_buffer, strlen(omega_buffer), HAL_MAX_DELAY);
+
+
+        v_desired = v_new; ////
+        w_desired = omega; ////
+
+        log_to_uart(v_buffer);
+        log_to_uart(omega_buffer);
+
+
+    }
+
+    // lhz:
+	if ((huart->Instance == UART4)  && 0){
+
+		if (rxChar == '\n' || rxChar == '\r') {
+			if (rxIndex > 0) {
+				rxBuffer[rxIndex] = '\0';
+				msgReceived = 1;
+				float v = 0.0f, w = 0.0f;
+				if (parseVelocityData(rxBuffer, &v, &w)) {
+					//HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+					v_desired = v;
+					if (w < -1 * W_DEAD_BAND) {
+						w_desired = w - W_AMP;
+					} else if (w > W_DEAD_BAND) {
+						w_desired = w + W_AMP;
+					} else {
+						w_desired = w;
+					}
+				}
+				msgReceived = 0;
+				rxIndex = 0;
+			}
+		} else {
+			if (rxIndex < RX_BUF_SIZE - 1) {
+				rxBuffer[rxIndex++] = rxChar;
+			} else {
+				rxIndex = 0;  // overflow, reset
+			}
+		}
+	}
+
+    HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
+	HAL_UART_Receive_IT(&huart4, &rxChar, 1);  // re-arm
+}
+
+
+// LZR de
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim->Instance == TIM16) {
-		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+//		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
 		float time_gap = (float) (HAL_GetTick() - last_interrupt_time) / 1000.0;
 		if (time_gap < EPSILON) {
 			time_gap = EPSILON;
@@ -862,7 +1119,7 @@ int pwm_mapping(int duty_cycle) {
 
 void motor_control(int motor, int control, float v_desired) {
 	int duty_cycle = 0;
-	if (fabs(v_desired) > DEAD_BAND) {
+	if (fabs(v_desired) > V_DEAD_BAND) {
 		if (control > 0) {
 			duty_cycle = control;
 			if (v_desired > 0) {
@@ -962,10 +1219,14 @@ void compute_control(float time_gap) {
 	int lf_control = 0;
 	int rf_control = 0;
 	const float Kp = 1000, Ki = 7500, Kd = 0.0;
+	if (fabs(v_desired) > V_MAX) {
+ 		v_desired = V_MAX * (v_desired / fabs(v_desired));
+ 	}
 
-	if (v_desired > V_MAX) {
-		v_desired = V_MAX;
+	if (w_desired > W_MAX) {
+		w_desired = W_MAX * (w_desired / fabs(w_desired));
 	}
+
 
 	compute_ideal_speed(v_desired, w_desired, &lb_speed_ideal,
 			&rb_speed_ideal, &lf_speed_ideal, &rf_speed_ideal);
@@ -1014,37 +1275,37 @@ void compute_control(float time_gap) {
 	lb_count_current = __HAL_TIM_GET_COUNTER(&htim3);
 	rb_count_current = __HAL_TIM_GET_COUNTER(&htim4);
 
-	sprintf(temp_str,
-			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04u | LB Duty Cycle: %03d\r\n",
-			time_gap, v_desired, w_desired, lb_error, lb_integral,
-			lb_derivative, lb_speed_ideal, lb_speed_real, lb_count_current,
-			duty_cycle_lb);
-	log_to_uart(temp_str);
+//		sprintf(temp_str,
+//				"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04u | LB Duty Cycle: %03d\r\n",
+//				time_gap, v_desired, w_desired, lb_error, lb_integral,
+//				lb_derivative, lb_speed_ideal, lb_speed_real, lb_count_current,
+//				duty_cycle_lb);
+//		log_to_uart(temp_str);
+//
+//		sprintf(temp_str,
+//				"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | RB Ideal: %+6.2f | RB Real: %+6.2f | RB Control: %04u | RB Duty Cycle: %03d\r\n",
+//				time_gap, v_desired, w_desired, rb_error, rb_integral,
+//				rb_derivative, rb_speed_ideal, rb_speed_real, rb_count_current,
+//				duty_cycle_rb);
+//		log_to_uart(temp_str);
 
-	sprintf(temp_str,
-			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | RB Ideal: %+6.2f | RB Real: %+6.2f | RB Control: %04u | RB Duty Cycle: %03d\r\n",
-			time_gap, v_desired, w_desired, rb_error, rb_integral,
-			rb_derivative, rb_speed_ideal, rb_speed_real, rb_count_current,
-			duty_cycle_rb);
-	log_to_uart(temp_str);
-
-	sprintf(temp_str,
-			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LF Ideal: %+6.2f | LF Real: %+6.2f | LF Control: %04d | LF Duty Cycle: %03d\r\n",
-			time_gap, v_desired, w_desired, lb_error, lf_integral,
-			lf_derivative, lf_speed_ideal, lf_speed_real, lf_control,
-			duty_cycle_lf);
-	log_to_uart(temp_str);
-
-	sprintf(temp_str,
-			"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | RF Ideal: %+6.2f | RF Real: %+6.2f | RF Control: %04d | RF Duty Cycle: %03d\r\n",
-			time_gap, v_desired, w_desired, rf_error, rf_integral,
-			rf_derivative, rf_speed_ideal, rf_speed_real, rf_control,
-			duty_cycle_rf);
-	log_to_uart(temp_str);
-
-	sprintf(temp_str, "\r\n");
-	log_to_uart(temp_str);
-}
+//		sprintf(temp_str,
+//				"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LF Ideal: %+6.2f | LF Real: %+6.2f | LF Control: %04d | LF Duty Cycle: %03d\r\n",
+//				time_gap, v_desired, w_desired, lb_error, lf_integral,
+//				lf_derivative, lf_speed_ideal, lf_speed_real, lf_control,
+//				duty_cycle_lf);
+//		log_to_uart(temp_str);
+//
+//		sprintf(temp_str,
+//				"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | RF Ideal: %+6.2f | RF Real: %+6.2f | RF Control: %04d | RF Duty Cycle: %03d\r\n",
+//				time_gap, v_desired, w_desired, rf_error, rf_integral,
+//				rf_derivative, rf_speed_ideal, rf_speed_real, rf_control,
+//				duty_cycle_rf);
+//		log_to_uart(temp_str);
+//
+//		sprintf(temp_str, "\r\n");
+//		log_to_uart(temp_str);
+	}
 
 
 float compute_real_speed(float time_gap, int motor) {
@@ -1064,7 +1325,6 @@ float compute_real_speed(float time_gap, int motor) {
 		count_diff = (int16_t) (__HAL_TIM_GET_COUNTER(&htim1) - lf_count_last);
 		speed_real = -1 * count_diff / 1320.0 * 2 * M_PI * MOTOR_RADIUS / time_gap;
 		lf_count_last = __HAL_TIM_GET_COUNTER(&htim1);
-		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
 	}
 	else if (motor == RF) {
 		count_diff = (int16_t) (__HAL_TIM_GET_COUNTER(&htim8) - rf_count_last);
