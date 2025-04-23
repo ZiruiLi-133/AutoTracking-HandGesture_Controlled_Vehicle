@@ -41,13 +41,13 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   CONTENTS, READONLY, DEBUGGING, OCTETS
  18 .debug_line   00015365  00000000  00000000  00049a2d  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .debug_str    000d5cc2  00000000  00000000  0005ed92  2**0
+ 19 .debug_str    000d5cc4  00000000  00000000  0005ed92  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 20 .comment      00000043  00000000  00000000  00134a54  2**0
+ 20 .comment      00000043  00000000  00000000  00134a56  2**0
                   CONTENTS, READONLY
- 21 .debug_frame  000058b0  00000000  00000000  00134a98  2**2
+ 21 .debug_frame  000058b0  00000000  00000000  00134a9c  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 22 .debug_line_str 00000059  00000000  00000000  0013a348  2**0
+ 22 .debug_line_str 00000059  00000000  00000000  0013a34c  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
 
 Disassembly of section .text:
@@ -1081,8 +1081,8 @@ void compute_ideal_speed(volatile float v, volatile float w,
  8000d22:	46bd      	mov	sp, r7
  8000d24:	bdb0      	pop	{r4, r5, r7, pc}
  8000d26:	bf00      	nop
- 8000d28:	9999999a 	.word	0x9999999a
- 8000d2c:	3fc99999 	.word	0x3fc99999
+ 8000d28:	ed916873 	.word	0xed916873
+ 8000d2c:	3fd53f7c 	.word	0x3fd53f7c
 
 08000d30 <lb_forward>:
  */
@@ -1508,7 +1508,7 @@ int main(void)
  8000fca:	4b0f      	ldr	r3, [pc, #60]	@ (8001008 <main+0x140>)
  8000fcc:	f04f 0200 	mov.w	r2, #0
  8000fd0:	601a      	str	r2, [r3, #0]
-	w_desired = -0.3;
+	w_desired = -3;
  8000fd2:	4b0e      	ldr	r3, [pc, #56]	@ (800100c <main+0x144>)
  8000fd4:	4a0e      	ldr	r2, [pc, #56]	@ (8001010 <main+0x148>)
  8000fd6:	601a      	str	r2, [r3, #0]
@@ -1530,7 +1530,7 @@ int main(void)
  8001004:	20000754 	.word	0x20000754
  8001008:	200007a0 	.word	0x200007a0
  800100c:	200007a4 	.word	0x200007a4
- 8001010:	be99999a 	.word	0xbe99999a
+ 8001010:	c0400000 	.word	0xc0400000
 
 08001014 <SystemClock_Config>:
 /**

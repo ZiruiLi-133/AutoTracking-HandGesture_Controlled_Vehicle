@@ -230,7 +230,7 @@ int main(void)
 
 	HAL_Delay(3000);
 	v_desired = 0.0;
-	w_desired = -0.3;
+	w_desired = -3;
 
 
 	while (1) {
