@@ -67,8 +67,9 @@ TIM_HandleTypeDef htim8;
 TIM_HandleTypeDef htim16;
 
 UART_HandleTypeDef huart4;
-UART_HandleTypeDef huart1; //
-UART_HandleTypeDef huart2; //
+UART_HandleTypeDef huart5;
+UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 
 PCD_HandleTypeDef hpcd_USB_FS;
@@ -76,8 +77,15 @@ PCD_HandleTypeDef hpcd_USB_FS;
 /* USER CODE BEGIN PV */
 // szj
 uint8_t rx_byte;
-char message_hello[] = "Hello world";
+//char message_hello[] = "Hello world";
+uint8_t hello_world[11] = "Hello world";
+uint8_t rx_data_11[11];  ////////
+uint8_t rx_data[8];
 
+uint8_t dir1[5]; // 4 bits + null terminator
+uint8_t v1[5];   // 4 bits + null terminator
+
+char temp_str[100];//// Print v and w
 
 char rx_buffer[8];
 uint8_t transfer_cplt;
@@ -92,7 +100,6 @@ char msg[20];  // Buffer for formatted message
 static float v_new = 0;
 static float omega = 0;
 char v_buffer[100], omega_buffer[100];
-uint8_t dir1, v1;
 
 // lzr
 const float EPSILON = 0.001;
@@ -179,6 +186,7 @@ static void MX_TIM16_Init(void);
 static void MX_UART4_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_UART5_Init(void);
 /* USER CODE BEGIN PFP */
 void log_to_uart(const char *msg);
 void compute_lb_real_speed(float time_gap);
@@ -242,15 +250,17 @@ int main(void)
   MX_UART4_Init();
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
+  MX_UART5_Init();
   /* USER CODE BEGIN 2 */
 	HAL_TIM_Base_Start_IT(&htim16);
 	HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
 	HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
 	HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
 	HAL_TIM_Encoder_Start(&htim8, TIM_CHANNEL_ALL);
-	HAL_UART_Receive_IT(&huart4, &rxChar, 1);
-	HAL_UART_Receive_IT(&huart1, &rx_byte, 1); // szj
-	char buffer_cmd[8];  // szj
+
+	HAL_UART_Receive_IT(&huart4, rx_data_11, 11);  // Give this back /////////////// UART 4
+	HAL_UART_Receive_IT(&huart5, rx_data_11, 11);  // Use this UART 5
+	//HAL_UART_Receive_IT(&huart1, rx_data_11, 11);
 
 	//start PWM
 //	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
@@ -283,12 +293,28 @@ int main(void)
 	rf_count_last = __HAL_TIM_GET_COUNTER(&htim8);
 
 //	HAL_Delay(1000);
-//	v_desired = 0;
-//	w_desired = 3.0;
+//	v_desired = 0.22;
+//	w_desired = 0;
 //	reset_pid();
 
 
 	while (1) {
+//		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+//		HAL_Delay(1000);
+
+
+//		  HAL_UART_Transmit(&huart5, &hello_world, 11, 10);  // Timeout = 10ms
+//		  HAL_Delay(2000); // 1000ms = 1s
+
+		  /* Shift String for testing */
+//		  int i;
+//		  uint8_t temp = hello_world[10]; // Store last character
+//		  for (i = 10; i > 0; i--) {
+//		      hello_world[i] = hello_world[i - 1];
+//		  }
+//		  hello_world[0] = temp;
+
+
 				/*v_desired = 1;
 				reset_pid();
 				HAL_Delay(1000);
@@ -369,14 +395,15 @@ void SystemClock_Config(void)
   }
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_USART1
                               |RCC_PERIPHCLK_USART2|RCC_PERIPHCLK_USART3
-                              |RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_RTC
-                              |RCC_PERIPHCLK_TIM1|RCC_PERIPHCLK_TIM16
-                              |RCC_PERIPHCLK_TIM8|RCC_PERIPHCLK_TIM2
-                              |RCC_PERIPHCLK_TIM34;
+                              |RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_UART5
+                              |RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_TIM1
+                              |RCC_PERIPHCLK_TIM16|RCC_PERIPHCLK_TIM8
+                              |RCC_PERIPHCLK_TIM2|RCC_PERIPHCLK_TIM34;
   PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
   PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
   PeriphClkInit.Usart3ClockSelection = RCC_USART3CLKSOURCE_PCLK1;
   PeriphClkInit.Uart4ClockSelection = RCC_UART4CLKSOURCE_PCLK1;
+  PeriphClkInit.Uart5ClockSelection = RCC_UART5CLKSOURCE_PCLK1;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
   PeriphClkInit.USBClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
   PeriphClkInit.Tim1ClockSelection = RCC_TIM1CLK_HCLK;
@@ -561,7 +588,7 @@ static void MX_TIM3_Init(void)
   htim3.Init.Period = 65535;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
@@ -750,6 +777,41 @@ static void MX_UART4_Init(void)
   /* USER CODE BEGIN UART4_Init 2 */
 
   /* USER CODE END UART4_Init 2 */
+
+}
+
+/**
+  * @brief UART5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_UART5_Init(void)
+{
+
+  /* USER CODE BEGIN UART5_Init 0 */
+
+  /* USER CODE END UART5_Init 0 */
+
+  /* USER CODE BEGIN UART5_Init 1 */
+
+  /* USER CODE END UART5_Init 1 */
+  huart5.Instance = UART5;
+  huart5.Init.BaudRate = 115200;
+  huart5.Init.WordLength = UART_WORDLENGTH_8B;
+  huart5.Init.StopBits = UART_STOPBITS_1;
+  huart5.Init.Parity = UART_PARITY_NONE;
+  huart5.Init.Mode = UART_MODE_TX_RX;
+  huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart5.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart5.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart5.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN UART5_Init 2 */
+
+  /* USER CODE END UART5_Init 2 */
 
 }
 
@@ -980,84 +1042,270 @@ static void MX_GPIO_Init(void)
 //wo de
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	//szj:
-    if (huart->Instance == USART1)
+	//wo de:
+    if (huart->Instance == UART5)
     {
-    	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
-        // Unpack command
-        dir1 = (rx_byte >> 4) & 0x0F;
-        v1   = rx_byte & 0x0F;
+//		reset_pid();
 
-        if(dir1 == 1){
-            omega = (float)v1 /5;
-            v_new = (float)v1 /5;
-        }
-        else if(dir1 == 2){
-            omega = -(float)v1 /5;
-            v_new = (float)v1 /5;
-        }
-        else if(dir1 == 3){
-            omega = 0;
-            v_new = 0;
-        }
-        else if(dir1 == 0){
-            omega = 0;
-            v_new = (float)v1 /5;
-        }
-        else{
-            omega = 0;
-            v_new = 0;
-        }
-
-        // Print values to UART2
-        sprintf(v_buffer, "v=%.2f ", v_new);
-        sprintf(omega_buffer, "w=%.2f\r\n", omega);
-        HAL_UART_Transmit(&huart2, (uint8_t*)v_buffer, strlen(v_buffer), HAL_MAX_DELAY);
-        HAL_UART_Transmit(&huart2, (uint8_t*)omega_buffer, strlen(omega_buffer), HAL_MAX_DELAY);
+		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+		//HAL_UART_Transmit(&huart3, rx_data_11, 11, 10); // Send received byte to PC (UART3 -> COM port)
 
 
-        v_desired = v_new; ////
-        w_desired = omega; ////
-
-        log_to_uart(v_buffer);
-        log_to_uart(omega_buffer);
 
 
+		/* Process receive buffer */
+		// Map buffer in size 11 to size 8 to process
+		for (int i = 0; i < 8; i++) {
+			rx_data[i] = rx_data_11[i];
+		}
+
+		// Copy upper 4 bits (index 0 to 3) to dir1
+		for (int i = 0; i < 4; i++) {
+			dir1[i] = rx_data[i]; // '0' or '1'
+		}
+		dir1[4] = '\0'; // Null terminator
+
+		// Copy lower 4 bits (index 4 to 7) to v1
+		for (int i = 0; i < 4; i++) {
+			v1[i] = rx_data[i + 4]; // '0' or '1'
+		}
+		v1[4] = '\0'; // Null terminator
+
+		HAL_UART_Transmit(&huart3, (uint8_t*) "Buffer:", 7, 10);
+        HAL_UART_Transmit(&huart3, rx_data, 8, 10); ////
+		HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 3, 10);
+
+//		HAL_UART_Transmit(&huart3, (uint8_t*) "dir1:", 5, 10);
+//		HAL_UART_Transmit(&huart3,  dir1, strlen(dir1), 10);
+//		HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+//
+//		HAL_UART_Transmit(&huart3, (uint8_t*) "v1:", 3, 10);
+//		HAL_UART_Transmit(&huart3,  v1, strlen(v1), 10);
+//		HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+
+		// float v without sign
+		if (strcmp(v1, "0000") == 0) {
+			v_new = 0.0;
+
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "v1=0000:", 8, 10);
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(v1, "0001") == 0) {
+			v_new = 0.1;
+//
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "v1=0001:", 8, 10);
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(v1, "0010") == 0) {
+			v_new = 0.2;
+
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "v1=0010:", 8, 10);
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(v1, "0011") == 0) {
+			v_new = 0.3;
+
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "v1=0011:", 8, 10);
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(v1, "0100") == 0) {
+			v_new = 0.4;
+
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "v1=0100:", 8, 10);
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else {
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "Error", 5, 10);
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		}
+
+		// Adding sign to float v
+		// float w
+		if (strcmp(dir1, "0001") == 0) {
+			omega = 1 * v_new * 3;
+			v_new = 1 * v_new;
+
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "dir1=0001:", 10, 10);
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(dir1, "0010") == 0) {
+			omega = (-1) * v_new * 3;
+			v_new = 1 * v_new;
+//
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "dir1=0010:", 10, 10);
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(dir1, "0011") == 0) {
+			omega = 0;
+			v_new = (-1) * v_new;
+
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "dir1=0011:", 10, 10);
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(dir1, "0000") == 0) {
+			omega = 0;
+			v_new = 1 * v_new;
+
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "dir1=0000:", 10, 10);
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else {
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "Error", 5, 10);
+//			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		}
+
+		v_desired = v_new;
+		w_desired = omega;
+		sprintf(temp_str, "v: %+6.2f | w: %+6.2fd\r\n", v_desired, w_desired);
+		log_to_uart(temp_str);
+
+//		HAL_UART_Transmit(&huart3, (uint8_t*) "\n\n", 2, 10);
+
+
+
+		// Flag
+		HAL_UART_Receive_IT(&huart5, rx_data_11, 11);
     }
 
-    // lhz:
-	if ((huart->Instance == UART4)  && 0){
+//    // lhz:
+//	if ((huart->Instance == UART4)  && 0){
+//
+//		if (rxChar == '\n' || rxChar == '\r') {
+//			if (rxIndex > 0) {
+//				rxBuffer[rxIndex] = '\0';
+//				msgReceived = 1;
+//				float v = 0.0f, w = 0.0f;
+//				if (parseVelocityData(rxBuffer, &v, &w)) {
+//					//HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+//					v_desired = v;
+//					if (w < -1 * W_DEAD_BAND) {
+//						w_desired = w - W_AMP;
+//					} else if (w > W_DEAD_BAND) {
+//						w_desired = w + W_AMP;
+//					} else {
+//						w_desired = w;
+//					}
+//				}
+//				msgReceived = 0;
+//				rxIndex = 0;
+//			}
+//		} else {
+//			if (rxIndex < RX_BUF_SIZE - 1) {
+//				rxBuffer[rxIndex++] = rxChar;
+//			} else {
+//				rxIndex = 0;  // overflow, reset
+//			}
+//		}
+//	}
 
-		if (rxChar == '\n' || rxChar == '\r') {
-			if (rxIndex > 0) {
-				rxBuffer[rxIndex] = '\0';
-				msgReceived = 1;
-				float v = 0.0f, w = 0.0f;
-				if (parseVelocityData(rxBuffer, &v, &w)) {
-					//HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
-					v_desired = v;
-					if (w < -1 * W_DEAD_BAND) {
-						w_desired = w - W_AMP;
-					} else if (w > W_DEAD_BAND) {
-						w_desired = w + W_AMP;
-					} else {
-						w_desired = w;
-					}
-				}
-				msgReceived = 0;
-				rxIndex = 0;
-			}
-		} else {
-			if (rxIndex < RX_BUF_SIZE - 1) {
-				rxBuffer[rxIndex++] = rxChar;
-			} else {
-				rxIndex = 0;  // overflow, reset
-			}
+
+	if (huart->Instance == UART4) {
+
+		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+		//HAL_UART_Transmit(&huart3, rx_data_11, 11, 10); // Send received byte to PC (UART3 -> COM port)
+
+
+
+
+		/* Process receive buffer */
+		// Map buffer in size 11 to size 8 to process
+		for (int i = 0; i < 8; i++) {
+			rx_data[i] = rx_data_11[i];
 		}
+
+		// Copy upper 4 bits (index 0 to 3) to dir1
+		for (int i = 0; i < 4; i++) {
+			dir1[i] = rx_data[i]; // '0' or '1'
+		}
+		dir1[4] = '\0'; // Null terminator
+
+		// Copy lower 4 bits (index 4 to 7) to v1
+		for (int i = 0; i < 4; i++) {
+			v1[i] = rx_data[i + 4]; // '0' or '1'
+		}
+		v1[4] = '\0'; // Null terminator
+
+		HAL_UART_Transmit(&huart3, (uint8_t*) "Buffer:", 7, 10);
+        HAL_UART_Transmit(&huart3, rx_data, 8, 10); ////
+		HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 3, 10);
+
+//		HAL_UART_Transmit(&huart3, (uint8_t*) "dir1:", 5, 10);
+//		HAL_UART_Transmit(&huart3,  dir1, strlen(dir1), 10);
+//		HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+//
+//		HAL_UART_Transmit(&huart3, (uint8_t*) "v1:", 3, 10);
+//		HAL_UART_Transmit(&huart3,  v1, strlen(v1), 10);
+//		HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+
+		// float v without sign
+		if (strcmp(v1, "0000") == 0) {
+			v_new = 0.0;
+
+			HAL_UART_Transmit(&huart3, (uint8_t*) "v1=0000:", 8, 10);
+			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(v1, "0001") == 0) {
+			v_new = 0.3;
+
+			HAL_UART_Transmit(&huart3, (uint8_t*) "v1=0001:", 8, 10);
+			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(v1, "0010") == 0) {
+			v_new = 0.6;
+
+			HAL_UART_Transmit(&huart3, (uint8_t*) "v1=0010:", 8, 10);
+			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(v1, "0011") == 0) {
+			v_new = 0.9;
+
+			HAL_UART_Transmit(&huart3, (uint8_t*) "v1=0011:", 8, 10);
+			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(v1, "0100") == 0) {
+			v_new = 1.0;
+
+			HAL_UART_Transmit(&huart3, (uint8_t*) "v1=0100:", 8, 10);
+			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else {
+			HAL_UART_Transmit(&huart3, (uint8_t*) "Error", 5, 10);
+			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		}
+
+		// Adding sign to float v
+		// float w
+		if (strcmp(dir1, "0001") == 0) {
+			omega = 1 * v_new;
+			v_new = 1 * v_new;
+
+			HAL_UART_Transmit(&huart3, (uint8_t*) "dir1=0001:", 10, 10);
+			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(dir1, "0010") == 0) {
+			omega = (-1) * v_new;
+			v_new = 1 * v_new;
+
+			HAL_UART_Transmit(&huart3, (uint8_t*) "dir1=0010:", 10, 10);
+			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(dir1, "0011") == 0) {
+			omega = 0;
+			v_new = 0;
+
+			HAL_UART_Transmit(&huart3, (uint8_t*) "dir1=0011:", 10, 10);
+			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else if (strcmp(dir1, "0000") == 0) {
+			omega = 0;
+			v_new = 1 * v_new;
+
+			HAL_UART_Transmit(&huart3, (uint8_t*) "dir1=0000:", 10, 10);
+			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		} else {
+			HAL_UART_Transmit(&huart3, (uint8_t*) "Error", 5, 10);
+			HAL_UART_Transmit(&huart3, (uint8_t*) "\r\n", 2, 10);
+		}
+
+		v_desired = v_new;
+		w_desired = omega;
+
+		HAL_UART_Transmit(&huart3, (uint8_t*) "\n\n", 2, 10);
+
+
+
+		// Flag
+		HAL_UART_Receive_IT(&huart4, rx_data_11, 11);
+
 	}
 
-    HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
-	HAL_UART_Receive_IT(&huart4, &rxChar, 1);  // re-arm
+
+
+    //HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
+	//HAL_UART_Receive_IT(&huart4, &rxChar, 1);  // re-arm
 }
 
 
@@ -1211,6 +1459,8 @@ void set_direction(int motor, int direction) {
 void reset_pid(void) {
 	lb_integral = 0.0;
 	lb_previous_err = 0.0;
+	rb_integral = 0.0;
+	rb_previous_err = 0.0;
 }
 
 void compute_control(float time_gap) {
@@ -1218,7 +1468,8 @@ void compute_control(float time_gap) {
 	int rb_control = 0;
 	int lf_control = 0;
 	int rf_control = 0;
-	const float Kp = 1000, Ki = 7500, Kd = 0.0;
+	const float Kp = 1000, Ki=7500.0; //Ki = 7500;
+	const float Kd = 0.0;
 	if (fabs(v_desired) > V_MAX) {
  		v_desired = V_MAX * (v_desired / fabs(v_desired));
  	}
@@ -1275,18 +1526,18 @@ void compute_control(float time_gap) {
 	lb_count_current = __HAL_TIM_GET_COUNTER(&htim3);
 	rb_count_current = __HAL_TIM_GET_COUNTER(&htim4);
 
-//		sprintf(temp_str,
-//				"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04u | LB Duty Cycle: %03d\r\n",
-//				time_gap, v_desired, w_desired, lb_error, lb_integral,
-//				lb_derivative, lb_speed_ideal, lb_speed_real, lb_count_current,
-//				duty_cycle_lb);
+		sprintf(temp_str,
+				"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | LB Ideal: %+6.2f | LB Real: %+6.2f | LB Control: %04d | LB Duty Cycle: %03d\r\n",
+				time_gap, v_desired, w_desired, lb_error, lb_integral,
+				lb_derivative, lb_speed_ideal, lb_speed_real, lb_control,
+				duty_cycle_lb);
 //		log_to_uart(temp_str);
 //
-//		sprintf(temp_str,
-//				"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | RB Ideal: %+6.2f | RB Real: %+6.2f | RB Control: %04u | RB Duty Cycle: %03d\r\n",
-//				time_gap, v_desired, w_desired, rb_error, rb_integral,
-//				rb_derivative, rb_speed_ideal, rb_speed_real, rb_count_current,
-//				duty_cycle_rb);
+		sprintf(temp_str,
+				"[Δt: %6.2f s] v: %+6.2f | w: %+6.2f | err: %+6.2f | int: %+6.2f | der: %+6.2f | RB Ideal: %+6.2f | RB Real: %+6.2f | RB Control: %04d | RB Duty Cycle: %03d\r\n",
+				time_gap, v_desired, w_desired, rb_error, rb_integral,
+				rb_derivative, rb_speed_ideal, rb_speed_real, rb_control,
+				duty_cycle_rb);
 //		log_to_uart(temp_str);
 
 //		sprintf(temp_str,
@@ -1303,23 +1554,28 @@ void compute_control(float time_gap) {
 //				duty_cycle_rf);
 //		log_to_uart(temp_str);
 //
-//		sprintf(temp_str, "\r\n");
-//		log_to_uart(temp_str);
+		sprintf(temp_str, "\r\n");
+		log_to_uart(temp_str);
 	}
 
 
 float compute_real_speed(float time_gap, int motor) {
+//	char temp_str[50];
 	int16_t count_diff = 0;
 	float speed_real = 0.0;
 	if (motor == LB) {
 		count_diff = (int16_t) (__HAL_TIM_GET_COUNTER(&htim3) - lb_count_last);
 		speed_real = -1 * count_diff / 1320.0 * 2 * M_PI * MOTOR_RADIUS / time_gap;
 		lb_count_last = __HAL_TIM_GET_COUNTER(&htim3);
+//		sprintf(temp_str, "LB count diff: %d, speed: %.4f\r\n", count_diff, speed_real);
+//		log_to_uart(temp_str);
 	}
 	else if (motor == RB) {
 		count_diff = (int16_t) (__HAL_TIM_GET_COUNTER(&htim4) - rb_count_last);
 		speed_real = count_diff / 1320.0 * 2 * M_PI * MOTOR_RADIUS / time_gap;
 		rb_count_last = __HAL_TIM_GET_COUNTER(&htim4);
+//		sprintf(temp_str, "RB count diff: %d, speed: %.4f\r\n", count_diff, speed_real);
+//		log_to_uart(temp_str);
 	}
 	else if (motor == LF) {
 		count_diff = (int16_t) (__HAL_TIM_GET_COUNTER(&htim1) - lf_count_last);
